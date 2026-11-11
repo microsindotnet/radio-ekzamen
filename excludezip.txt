@@ -1,0 +1,5 @@
+radio-ekzamen/__pycache__/*
+radio-ekzamen/src/__pycache__/*
+radio-ekzamen/.kilo/*
+radio-ekzamen/doc/*
+
