@@ -9,6 +9,7 @@ dist/
 .venv/
 venv/
 env/
+doc/
 
 # Инструменты и кэши
 .mypy_cache/
