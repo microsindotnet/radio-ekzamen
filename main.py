@@ -16,6 +16,7 @@ import importlib.util
 import os
 import random
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 # Позволяет запускать как `python main.py` из корня проекта,
@@ -43,6 +44,10 @@ stat = _load_stat_module()
 
 TICKET_MIN = 1
 TICKET_MAX = 426
+
+# Сколько последних показанных билетов исключать из случайного выбора, чтобы
+# один и тот же билет не выпадал слишком часто.
+RECENT_LIMIT = 10
 
 
 def wait_for_key(prompt: str = "Выберите ответ (1..4) или Esc: ") -> str:
@@ -139,56 +144,84 @@ def print_stats(total: int, correct: int, wrong: int) -> None:
     print(border)
 
 
-def pick_random(extend: bool = False, exclude: int | None = None) -> int:
-    """Случайный номер билета.
+def pick_random(extend: bool = False, excluded: Iterable[int] | None = None) -> int:
+    """Случайный номер билета, которого нет в ``excluded``.
 
     При ``extend=True`` сложные билеты (``hard``) выпадают в 2 раза чаще.
-    ``exclude`` исключает номер из результата.
+    ``excluded`` — номера, которые нельзя выдавать (последние показанные
+    билеты и ошибочные билеты).
     """
+    skip = set(excluded or ())
     if extend:
-        population = [t.number for t in tickets.TICKETS]
-        weights = [2 if t.hard else 1 for t in tickets.TICKETS]
-        while True:
-            number = random.choices(population, weights=weights, k=1)[0]
-            if number != exclude:
-                return number
+        offers = [t for t in tickets.TICKETS if t.number not in skip]
+        if not offers:  # защита: если исключать стало нечего
+            offers = list(tickets.TICKETS)
+        population = [t.number for t in offers]
+        weights = [2 if t.hard else 1 for t in offers]
+        return random.choices(population, weights=weights, k=1)[0]
     number = random.randint(TICKET_MIN, TICKET_MAX)
-    while number == exclude:
+    while number in skip:
         number = random.randint(TICKET_MIN, TICKET_MAX)
     return number
 
 
 def pick_ticket(
     extend: bool,
-    exclude: int | None,
     stats: stat.ErrorStats,
     training: int,
+    recent: list[int],
 ) -> tuple[int, int]:
     """Выбрать следующий билет с учётом тренировочного счётчика.
 
-    ``training`` — счётчик «тренировки»: пока он больше 1, выдаются обычные
-    случайные билеты и счётчик уменьшается; когда он становится 1, выдаётся
-    билет с ошибкой из ``err_stat.txt``, а счётчик сбрасывается в 0. Когда
-    счётчик равен 0 и есть ошибочные билеты, он заново задаётся случайным
-    числом от 5 до 10.
+    ``training`` — счётчик «тренировки». ``recent`` — последние показанные
+    билеты (не длиннее ``RECENT_LIMIT``); их нельзя вытянуть случайно, чтобы
+    недавние билеты не повторялись подряд.
+
+    Алгоритм:
+
+    1. Счётчик равен 0 и есть ошибочные билеты — заводим отсчёт
+       ``RECENT_LIMIT + G``, где ``G`` — случайное число 5..10. То есть
+       ошибочный билет повторяется не раньше, чем через ``10 + G`` вопросов.
+    2. Счётчик больше 1 — показываем обычный случайный билет (кроме ``recent``
+       и ошибочных; сложные ``hard`` — в 2 раза чаще), счётчик уменьшается на 1.
+    3. Счётчик равен 1 — показываем случайный билет из списка ошибочных. Если
+       он не входит в ``recent``, счётчик сбрасывается в 0; если входит, то
+       показываем обычный случайный билет, а счётчик НЕ уменьшается, чтобы
+       повторить попытку позже.
+    4. Ошибочных билетов нет — обычный случайный билет.
 
     Возвращает ``(number, training)`` — номер билета и новое значение счётчика.
     """
     err_numbers = sorted(stats.counts)
+    excluded_recent = set(recent)
+    # Обычный случайный выбор исключает и последние показанные билеты, и все
+    # ошибочные. Ошибочные показываются ТОЛЬКО счётчиком training, поэтому
+    # повтор происходит строго не раньше, чем через RECENT_LIMIT + G вопросов.
+    excluded_random = excluded_recent | set(err_numbers)
 
+    # 1. Счётчик не активен, но есть ошибочные билеты — новый отсчёт.
+    #    Повтор ошибочного билета — не раньше, чем через RECENT_LIMIT + G
+    #    вопросов (G случайно 5..10).
     if training == 0 and err_numbers:
-        training = random.randint(5, 10)
+        training = RECENT_LIMIT + random.randint(5, 10)
 
+    # 2. Обычный случайный билет (не recent, не ошибочный), счётчик -1.
+    if training > 1:
+        return pick_random(extend, excluded_random), training - 1
+
+    # 3. Пора показать билет из списка ошибочных.
     if training == 1:
         if err_numbers:
-            candidates = [n for n in err_numbers if n != exclude] or err_numbers
-            return random.choice(candidates), 0
+            candidate = random.choice(err_numbers)
+            if candidate not in excluded_recent:
+                return candidate, 0
+            # Ошибочный билет недавно показывали: показываем обычный,
+            # счётчик НЕ уменьшается — повторим попытку позже.
+            return pick_random(extend, excluded_random), 1
         training = 0
 
-    if training > 1:
-        training -= 1
-
-    return pick_random(extend, exclude), training
+    # 4. Ошибочных билетов нет — обычный случайный билет.
+    return pick_random(extend, excluded_random), training
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -246,18 +279,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.random:
-        number, training = pick_ticket(args.extend, None, stats, training)
+        number, training = pick_ticket(args.extend, stats, training, [])
         esc, ok = show_ticket(tickets.get_ticket(number), args.extend)
         if not esc:
             stats.record(number, ok)
         return 0
 
-    last = None
+    # ``recent`` — последние показанные билеты: их не выдаём повторно,
+    # пока список не «продвинется» (см. RECENT_LIMIT).
+    recent: list[int] = []
     total = 0
     correct = 0
     while True:
-        number, training = pick_ticket(args.extend, last, stats, training)
-        last = number
+        number, training = pick_ticket(args.extend, stats, training, recent)
+        recent.append(number)
+        if len(recent) > RECENT_LIMIT:
+            recent.pop(0)
         esc, ok = show_ticket(tickets.get_ticket(number), args.extend)
         if esc:
             break
