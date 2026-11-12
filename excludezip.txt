@@ -2,4 +2,7 @@ radio-ekzamen/__pycache__/*
 radio-ekzamen/src/__pycache__/*
 radio-ekzamen/.kilo/*
 radio-ekzamen/doc/*
+radio-ekzamen/Vue/node_modules/*
+radio-ekzamen/Vue/dist/*
+radio-ekzamen/Vue/.vite/*
 

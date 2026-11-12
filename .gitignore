@@ -11,6 +11,15 @@ venv/
 env/
 doc/
 
+# Node.js / Vue (проект Vue/)
+node_modules/
+.vite/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 # Инструменты и кэши
 .mypy_cache/
 .pytest_cache/

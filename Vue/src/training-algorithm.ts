@@ -1,0 +1,283 @@
+/**
+ * Алгоритм тренировки.
+ *
+ * Здесь собраны две связанные части:
+ *
+ *   1. Учёт статистики ошибочных ответов (аналог `src/stat.py` и файла
+ *      `err_stat.txt`): какие билеты и сколько раз были отвечены неверно.
+ *   2. Выбор следующего билета с учётом тренировочного счётчика и окна
+ *      последних показанных билетов.
+ *
+ * Правила выбора билета:
+ *
+ *   - обычный случайный билет НИКОГДА не берётся из последних `RECENT_LIMIT`
+ *     показанных (`recent`) — недавние билеты не должны повторяться;
+ *   - обычный случайный билет НИКОГДА не берётся и из списка ошибочных:
+ *     ошибочные билеты показываются ТОЛЬКО счётчиком `training`;
+ *   - сложные билеты (`hard`) выпадают в 2 раза чаще простых;
+ *   - тренировочный счётчик `training` показывает билет из списка ошибочных
+ *     не раньше чем через `RECENT_LIMIT + G` вопросов (`G` — случайно 5..10).
+ */
+
+import { TICKETS } from './tickets'
+import { INITIAL_ERR_STAT } from './errStat'
+
+export const TICKET_MIN = 1
+export const TICKET_MAX = 426
+
+/**
+ * Сколько последних показанных билетов нельзя вытянуть случайно.
+ * Это исключает повтор недавних билетов (например, только что отвеченных).
+ */
+export const RECENT_LIMIT = 10
+
+// ---------------------------------------------------------------------------
+// Учёт статистики ошибочных ответов (аналог err_stat.txt)
+// ---------------------------------------------------------------------------
+
+export const STAT_WIDTH = 3
+
+const STORAGE_KEY = 'radio-ekzamen:err_stat'
+
+/** Разобрать текст статистики в карту «номер билета -> число ошибок». */
+export function parseErrStat(text: string): Map<number, number> {
+  const counts = new Map<number, number>()
+  for (const line of text.split(/\r?\n/)) {
+    const parts = line.trim().split(/\s+/)
+    if (parts.length !== 3 || parts[1] !== 'ошибок') continue
+    const number = Number.parseInt(parts[0], 10)
+    const count = Number.parseInt(parts[2], 10)
+    if (!Number.isInteger(number) || !Number.isInteger(count)) continue
+    if (count > 0) counts.set(number, count)
+  }
+  return counts
+}
+
+/** Сериализовать статистику в текст формата `err_stat.txt` (`NNN ошибок K`). */
+export function formatErrStat(counts: Map<number, number>): string {
+  const lines = [...counts.keys()]
+    .sort((a, b) => a - b)
+    .map((number) => `${String(number).padStart(STAT_WIDTH, '0')} ошибок ${counts.get(number)}`)
+  return lines.length ? lines.join('\n') + '\n' : ''
+}
+
+/**
+ * Статистика ошибок по билетам.
+ *
+ * В браузере файла нет, поэтому данные хранятся в `localStorage` (при первом
+ * открытии страницы подгружается исходное содержимое `err_stat.txt`).
+ */
+export class ErrorStats {
+  private counts = new Map<number, number>()
+
+  constructor() {
+    this.load()
+  }
+
+  load(): void {
+    let text = localStorage.getItem(STORAGE_KEY)
+    if (text === null) {
+      text = INITIAL_ERR_STAT
+      localStorage.setItem(STORAGE_KEY, text)
+    }
+    this.counts = parseErrStat(text)
+  }
+
+  save(): void {
+    localStorage.setItem(STORAGE_KEY, formatErrStat(this.counts))
+  }
+
+  /** Обновить статистику по ответу на билет `number`. */
+  record(number: number, correct: boolean): void {
+    if (correct) {
+      const count = (this.counts.get(number) ?? 0) - 1
+      if (count > 0) this.counts.set(number, count)
+      else this.counts.delete(number)
+    } else {
+      this.counts.set(number, (this.counts.get(number) ?? 0) + 1)
+    }
+    this.save()
+  }
+
+  /** Текущее число ошибок по билету. */
+  get(number: number): number {
+    return this.counts.get(number) ?? 0
+  }
+
+  /** Отсортированные номера билетов с ошибками. */
+  errorNumbers(): number[] {
+    return [...this.counts.keys()].sort((a, b) => a - b)
+  }
+
+  /** Число билетов, по которым есть ошибки. */
+  get size(): number {
+    return this.counts.size
+  }
+
+  /** Всего ошибок (сумма счётчиков). */
+  totalErrors(): number {
+    let total = 0
+    for (const count of this.counts.values()) total += count
+    return total
+  }
+
+  /** Снимок статистики для отображения: отсортированный список. */
+  snapshot(): Array<{ number: number; count: number }> {
+    return this.errorNumbers().map((number) => ({ number, count: this.get(number) }))
+  }
+
+  reset(): void {
+    this.counts = new Map()
+    this.save()
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Выбор билета
+// ---------------------------------------------------------------------------
+
+/** Целое число в диапазоне [min, max] включительно (аналог random.randint). */
+function randInt(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1))
+}
+
+/** Взвешенный выбор одного элемента (аналог random.choices(k=1)). */
+function weightedChoice<T>(items: T[], weights: number[]): T {
+  let total = 0
+  for (const w of weights) total += w
+  let r = Math.random() * total
+  for (let i = 0; i < items.length; i++) {
+    r -= weights[i]
+    if (r < 0) return items[i]
+  }
+  return items[items.length - 1]
+}
+
+/**
+ * Случайный билет, не входящий в `excluded`.
+ *
+ * При `extend = true` сложные билеты (`hard`) выпадают в 2 раза чаще.
+ * `excluded` — номера, которые нельзя выдавать (последние показанные билеты
+ * и ошибочные билеты).
+ */
+export function pickRandom(extend: boolean, excluded: ReadonlySet<number>): number {
+  if (extend) {
+    let offers = TICKETS.filter((t) => !excluded.has(t.number))
+    if (offers.length === 0) offers = [...TICKETS] // защита: исключать стало нечего
+    const population = offers.map((t) => t.number)
+    const weights = offers.map((t) => (t.hard ? 2 : 1))
+    return weightedChoice(population, weights)
+  }
+  let number = randInt(TICKET_MIN, TICKET_MAX)
+  while (excluded.has(number)) number = randInt(TICKET_MIN, TICKET_MAX)
+  return number
+}
+
+export interface PickResult {
+  number: number
+  training: number
+}
+
+/**
+ * Выбрать следующий билет с учётом тренировочного счётчика.
+ *
+ * `training` — счётчик «тренировки». `recent` — последние показанные билеты
+ * (не длиннее `RECENT_LIMIT`); их нельзя вытянуть случайно.
+ *
+ * Алгоритм:
+ *
+ *   1. Счётчик равен 0 и есть ошибочные билеты — заводим отсчёт
+ *      `RECENT_LIMIT + G`, где `G` — случайное число 5..10. То есть
+ *      ошибочный билет повторяется не раньше чем через `10 + G` вопросов.
+ *   2. Счётчик больше 1 — обычный случайный билет (кроме `recent` и
+ *      ошибочных; `hard` в 2 раза чаще), счётчик уменьшается на 1.
+ *   3. Счётчик равен 1 — случайный билет из списка ошибочных. Если он не
+ *      входит в `recent`, показываем его и сбрасываем счётчик в 0; если
+ *      входит — показываем обычный случайный билет, а счётчик НЕ уменьшается,
+ *      чтобы повторить попытку позже.
+ *   4. Ошибочных билетов нет — обычный случайный билет.
+ */
+export function pickTicket(
+  extend: boolean,
+  stats: ErrorStats,
+  training: number,
+  recent: number[],
+): PickResult {
+  const errNumbers = stats.errorNumbers()
+  const excludedRecent = new Set(recent)
+  // Обычный случайный выбор исключает и последние показанные билеты, и все
+  // ошибочные. Ошибочные показываются ТОЛЬКО счётчиком training, поэтому
+  // повтор происходит строго не раньше чем через RECENT_LIMIT + G вопросов.
+  const excludedRandom = new Set<number>([...recent, ...errNumbers])
+
+  // 1. Счётчик не активен, но есть ошибочные билеты — новый отсчёт
+  //    RECENT_LIMIT + G (G случайно 5..10). Повтор ошибочного билета —
+  //    не раньше чем через RECENT_LIMIT + G вопросов.
+  if (training === 0 && errNumbers.length > 0) {
+    training = RECENT_LIMIT + randInt(5, 10)
+  }
+
+  // 2. Обычный случайный билет (не recent, не ошибочный), счётчик -1.
+  if (training > 1) {
+    return { number: pickRandom(extend, excludedRandom), training: training - 1 }
+  }
+
+  // 3. Пора показать билет из списка ошибочных.
+  if (training === 1) {
+    if (errNumbers.length > 0) {
+      const candidate = errNumbers[randInt(0, errNumbers.length - 1)]
+      if (!excludedRecent.has(candidate)) {
+        return { number: candidate, training: 0 }
+      }
+      // Ошибочный билет недавно показывали: показываем обычный, счётчик
+      // НЕ уменьшается — повторим попытку позже.
+      return { number: pickRandom(extend, excludedRandom), training: 1 }
+    }
+    training = 0
+  }
+
+  // 4. Ошибочных билетов нет — обычный случайный билет.
+  return { number: pickRandom(extend, excludedRandom), training }
+}
+
+// ---------------------------------------------------------------------------
+// Сессия тренировки
+// ---------------------------------------------------------------------------
+
+/**
+ * Состояние тренировки: статистика ошибок + счётчик `training` + окно
+ * последних показанных билетов `recent`. Интерфейс для UI.
+ */
+export class TrainingSession {
+  readonly stats: ErrorStats
+
+  private training = 0
+  private recent: number[] = []
+
+  constructor(stats: ErrorStats = new ErrorStats()) {
+    this.stats = stats
+  }
+
+  /** Записать результат ответа (обновляет и сохраняет статистику ошибок). */
+  record(number: number, correct: boolean): void {
+    this.stats.record(number, correct)
+  }
+
+  /** Выбрать номер следующего билета и сдвинуть окно последних показанных. */
+  next(extend: boolean): number {
+    const result = pickTicket(extend, this.stats, this.training, this.recent)
+    this.training = result.training
+    this.recent.push(result.number)
+    if (this.recent.length > RECENT_LIMIT) this.recent.shift()
+    return result.number
+  }
+
+  /**
+   * Сбросить счётчик тренировки и окно последних билетов.
+   * Статистика ошибок при этом сохраняется (как и в оригинале).
+   */
+  reset(): void {
+    this.training = 0
+    this.recent = []
+  }
+}

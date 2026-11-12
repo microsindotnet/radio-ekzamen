@@ -1,0 +1,30 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #1c2230;
+  --fg: #d6deeb;
+  --fg-dim: #7d8590;
+  --green: #4ade80;
+  --red: #f87171;
+  --yellow: #f2cc60;
+  --accent: #58a6ff;
+  --border: #30363d;
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
