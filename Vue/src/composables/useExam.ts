@@ -103,9 +103,18 @@ export function useExam() {
     const correctText = state.ticket.answers['abcd'.indexOf(correctLetter)]
 
     if (isCorrect) {
-      pushText('Правильно', 'green')
+      // «Правильно» зелёным, «, N» (номер ответа) — обычным цветом.
+      pushSegments([
+        { text: 'Правильно', color: 'green' },
+        { text: `, ${key}`, color: 'default' },
+      ])
     } else {
-      pushText('Ошибка', 'red')
+      // «Ошибка» красным, номер ошибочного ответа — обычным цветом,
+      // затем правильный ответ.
+      pushSegments([
+        { text: 'Ошибка', color: 'red' },
+        { text: `: ${key}`, color: 'default' },
+      ])
       pushText(`Правильный ответ: ${correctText}`)
     }
 
