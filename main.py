@@ -144,25 +144,37 @@ def print_stats(total: int, correct: int, wrong: int) -> None:
     print(border)
 
 
-def pick_random(extend: bool = False, excluded: Iterable[int] | None = None) -> int:
+def pick_random(
+    extend: bool = False,
+    excluded: Iterable[int] | None = None,
+    halved: Iterable[int] | None = None,
+) -> int:
     """Случайный номер билета, которого нет в ``excluded``.
 
     При ``extend=True`` сложные билеты (``hard``) выпадают в 2 раза чаще.
     ``excluded`` — номера, которые нельзя выдавать (последние показанные
-    билеты и ошибочные билеты).
+    билеты и ошибочные билеты). ``halved`` — билеты, на которые был дан
+    правильный ответ (раздел ``Correct``): они выпадают в 2 раза реже.
     """
     skip = set(excluded or ())
+    half = set(halved or ())
     if extend:
         offers = [t for t in tickets.TICKETS if t.number not in skip]
         if not offers:  # защита: если исключать стало нечего
             offers = list(tickets.TICKETS)
         population = [t.number for t in offers]
-        weights = [2 if t.hard else 1 for t in offers]
+        weights = [
+            (2 if t.hard else 1) * (0.5 if t.number in half else 1)
+            for t in offers
+        ]
         return random.choices(population, weights=weights, k=1)[0]
-    number = random.randint(TICKET_MIN, TICKET_MAX)
-    while number in skip:
+    while True:
         number = random.randint(TICKET_MIN, TICKET_MAX)
-    return number
+        if number in skip:
+            continue
+        if number in half and random.random() < 0.5:
+            continue
+        return number
 
 
 def pick_ticket(
@@ -183,7 +195,8 @@ def pick_ticket(
        ``RECENT_LIMIT + G``, где ``G`` — случайное число 5..10. То есть
        ошибочный билет повторяется не раньше, чем через ``10 + G`` вопросов.
     2. Счётчик больше 1 — показываем обычный случайный билет (кроме ``recent``
-       и ошибочных; сложные ``hard`` — в 2 раза чаще), счётчик уменьшается на 1.
+       и ошибочных; сложные ``hard`` — в 2 раза чаще, а билеты из раздела
+       ``Correct`` — в 2 раза реже), счётчик уменьшается на 1.
     3. Счётчик равен 1 — показываем случайный билет из списка ошибочных. Если
        он не входит в ``recent``, счётчик сбрасывается в 0; если входит, то
        показываем обычный случайный билет, а счётчик НЕ уменьшается, чтобы
@@ -193,6 +206,8 @@ def pick_ticket(
     Возвращает ``(number, training)`` — номер билета и новое значение счётчика.
     """
     err_numbers = sorted(stats.counts)
+    # Билеты с правильным ответом (раздел Correct) выпадают в 2 раза реже.
+    correct_numbers = set(stats.correct)
     excluded_recent = set(recent)
     # Обычный случайный выбор исключает и последние показанные билеты, и все
     # ошибочные. Ошибочные показываются ТОЛЬКО счётчиком training, поэтому
@@ -207,7 +222,7 @@ def pick_ticket(
 
     # 2. Обычный случайный билет (не recent, не ошибочный), счётчик -1.
     if training > 1:
-        return pick_random(extend, excluded_random), training - 1
+        return pick_random(extend, excluded_random, correct_numbers), training - 1
 
     # 3. Пора показать билет из списка ошибочных.
     if training == 1:
@@ -217,11 +232,11 @@ def pick_ticket(
                 return candidate, 0
             # Ошибочный билет недавно показывали: показываем обычный,
             # счётчик НЕ уменьшается — повторим попытку позже.
-            return pick_random(extend, excluded_random), 1
+            return pick_random(extend, excluded_random, correct_numbers), 1
         training = 0
 
     # 4. Ошибочных билетов нет — обычный случайный билет.
-    return pick_random(extend, excluded_random), training
+    return pick_random(extend, excluded_random, correct_numbers), training
 
 
 def build_parser() -> argparse.ArgumentParser:
