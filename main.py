@@ -121,9 +121,12 @@ def show_ticket(ticket: tickets.Ticket, extend: bool = False) -> tuple[bool, boo
         selected_letter = choices[int(key) - 1][0]
         correct = selected_letter == correct_letter
         if correct:
-            print("\033[32mПравильно\033[0m")
+            # «Правильно» зелёным, «, N» (номер ответа) — обычным цветом.
+            print("\033[32mПравильно\033[0m" + f", {key}")
         else:
-            print("\033[31mОшибка\033[0m")
+            # «Ошибка» красным, номер ошибочного ответа — обычным цветом,
+            # затем правильный ответ.
+            print("\033[31mОшибка\033[0m" + f": {key}")
             print(f"Правильный ответ: {correct_text}")
         return (False, correct)
     finally:
