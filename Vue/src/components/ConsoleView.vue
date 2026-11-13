@@ -1,40 +1,81 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Phase, TranscriptItem } from '../composables/useExam'
 
 const props = defineProps<{ items: TranscriptItem[]; phase: Phase }>()
 
 const scroller = ref<HTMLElement | null>(null)
+const content = ref<HTMLElement | null>(null)
+
+// «Прилипание» к низу: пока пользователь у нижней границы, держим последние
+// строки и приглашение ввода видимыми. Если он пролистал вверх — не мешаем.
+const STICK_THRESHOLD = 48
+let stick = true
+let observer: ResizeObserver | null = null
+
+function isAtBottom(): boolean {
+  const el = scroller.value
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD
+}
+
+function scrollToBottom(): void {
+  const el = scroller.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
+function onScroll(): void {
+  stick = isAtBottom()
+}
+
+onMounted(() => {
+  // Картинка билета догружается асинхронно и увеличивает высоту контента уже
+  // после первичной прокрутки. ResizeObserver дотягивает скролл до низа,
+  // чтобы приглашение ввода не оказалось ниже видимой области.
+  observer = new ResizeObserver(() => {
+    if (stick) scrollToBottom()
+  })
+  if (content.value) observer.observe(content.value)
+  scrollToBottom()
+})
+
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  observer = null
+})
 
 watch(
   () => [props.items.length, props.phase],
   async () => {
+    stick = true
     await nextTick()
-    if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
+    scrollToBottom()
   },
   { flush: 'post' },
 )
 </script>
 
 <template>
-  <div ref="scroller" class="console">
-    <template v-for="(item, index) in items" :key="index">
-      <hr v-if="item.kind === 'divider'" class="divider" />
-      <div v-else-if="item.kind === 'image'" class="image-row">
-        <img :src="item.src" class="ticket-image" alt="Иллюстрация к билету" />
-      </div>
-      <div v-else class="line">
-        <span
-          v-for="(seg, segIndex) in item.segments"
-          :key="segIndex"
-          :class="`c-${seg.color}`"
-          >{{ seg.text }}</span
-        >
-      </div>
-    </template>
+  <div ref="scroller" class="console" @scroll="onScroll">
+    <div ref="content" class="console-content">
+      <template v-for="(item, index) in items" :key="index">
+        <hr v-if="item.kind === 'divider'" class="divider" />
+        <div v-else-if="item.kind === 'image'" class="image-row">
+          <img :src="item.src" class="ticket-image" alt="Иллюстрация к билету" />
+        </div>
+        <div v-else class="line">
+          <span
+            v-for="(seg, segIndex) in item.segments"
+            :key="segIndex"
+            :class="`c-${seg.color}`"
+            >{{ seg.text }}</span
+          >
+        </div>
+      </template>
 
-    <div v-if="phase === 'answering'" class="line prompt">
-      Выберите ответ (1..4) или Esc: <span class="cursor">█</span>
+      <div v-if="phase === 'answering'" class="line prompt">
+        Выберите ответ (1..4) или Esc: <span class="cursor">█</span>
+      </div>
     </div>
   </div>
 </template>
