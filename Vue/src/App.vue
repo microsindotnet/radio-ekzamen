@@ -1,12 +1,32 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import ConsoleView from './components/ConsoleView.vue'
+import StartScreen from './components/StartScreen.vue'
 import StatusBar from './components/StatusBar.vue'
 import { useExam } from './composables/useExam'
+import { loadQuizMode, saveQuizMode, QUIZ_MODE_LABELS } from './training-algorithm'
 
 const exam = useExam()
 
+const started = ref(false)
+const mode = ref(loadQuizMode())
+
+const modeLabel = computed(() => QUIZ_MODE_LABELS[exam.mode.value])
+
+watch(mode, (value) => saveQuizMode(value))
+
+function startTest(): void {
+  saveQuizMode(mode.value)
+  exam.start(mode.value)
+  started.value = true
+}
+
+function backToMenu(): void {
+  started.value = false
+}
+
 function onKeydown(event: KeyboardEvent): void {
+  if (!started.value) return
   if (event.repeat) return
   if (event.ctrlKey || event.altKey || event.metaKey) return
   if (event.key === 'Escape') {
@@ -21,7 +41,6 @@ function onKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
-  exam.start()
   window.addEventListener('keydown', onKeydown)
 })
 
@@ -31,12 +50,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app">
+  <StartScreen v-if="!started" v-model="mode" @start="startTest" />
+
+  <div v-else class="app">
     <header class="topbar">
-      <h1>Экзамен на радиолюбительскую категорию</h1>
+      <h1>Экзамен на радиолюбительскую категорию ({{ modeLabel }})</h1>
       <div class="topbar-right">
         <span class="hint">1..4 — ответить · Esc — завершить тест</span>
         <button class="restart" type="button" @click="exam.start()">Заново</button>
+        <button class="restart" type="button" @click="backToMenu">Меню</button>
       </div>
     </header>
 

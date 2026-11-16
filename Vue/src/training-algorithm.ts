@@ -32,6 +32,14 @@ export const TICKET_MAX = 426
  */
 export const RECENT_LIMIT = 10
 
+/** Множество номеров всех билетов (полный список для выбора). */
+const ALL_NUMBERS: ReadonlySet<number> = new Set(TICKETS.map((t) => t.number))
+
+/** Множество номеров билетов, помеченных как сложные (`hard`). */
+export const HARD_NUMBERS: ReadonlySet<number> = new Set(
+  TICKETS.filter((t) => t.hard).map((t) => t.number),
+)
+
 // ---------------------------------------------------------------------------
 // Учёт статистики ошибочных ответов (аналог err_stat.txt)
 // ---------------------------------------------------------------------------
@@ -224,19 +232,26 @@ export function pickRandom(
   extend: boolean,
   excluded: ReadonlySet<number>,
   halved: ReadonlySet<number>,
+  pool: ReadonlySet<number> = ALL_NUMBERS,
 ): number {
   if (extend) {
-    let offers = TICKETS.filter((t) => !excluded.has(t.number))
-    if (offers.length === 0) offers = [...TICKETS] // защита: исключать стало нечего
+    const all = TICKETS.filter((t) => pool.has(t.number))
+    let offers = all.filter((t) => !excluded.has(t.number))
+    if (offers.length === 0) offers = all // защита: исключать стало нечего
+    if (offers.length === 0) return TICKET_MIN // защита: пустой пул
     const population = offers.map((t) => t.number)
     const weights = offers.map(
       (t) => (t.hard ? 2 : 1) * (halved.has(t.number) ? 0.5 : 1),
     )
     return weightedChoice(population, weights)
   }
+  const available = [...pool].filter((n) => !excluded.has(n))
+  if (available.length === 0) {
+    const any = [...pool]
+    return any.length > 0 ? any[randInt(0, any.length - 1)] : TICKET_MIN
+  }
   for (;;) {
-    const number = randInt(TICKET_MIN, TICKET_MAX)
-    if (excluded.has(number)) continue
+    const number = available[randInt(0, available.length - 1)]
     if (halved.has(number) && Math.random() < 0.5) continue
     return number
   }
@@ -272,8 +287,9 @@ export function pickTicket(
   stats: ErrorStats,
   training: number,
   recent: number[],
+  pool: ReadonlySet<number> = ALL_NUMBERS,
 ): PickResult {
-  const errNumbers = stats.errorNumbers()
+  const errNumbers = stats.errorNumbers().filter((n) => pool.has(n))
   const excludedRecent = new Set(recent)
   // Обычный случайный выбор исключает и последние показанные билеты, и все
   // ошибочные. Ошибочные показываются ТОЛЬКО счётчиком training, поэтому
@@ -291,7 +307,7 @@ export function pickTicket(
 
   // 2. Обычный случайный билет (не recent, не ошибочный), счётчик -1.
   if (training > 1) {
-    return { number: pickRandom(extend, excludedRandom, correctNumbers), training: training - 1 }
+    return { number: pickRandom(extend, excludedRandom, correctNumbers, pool), training: training - 1 }
   }
 
   // 3. Пора показать билет из списка ошибочных.
@@ -303,13 +319,144 @@ export function pickTicket(
       }
       // Ошибочный билет недавно показывали: показываем обычный, счётчик
       // НЕ уменьшается — повторим попытку позже.
-      return { number: pickRandom(extend, excludedRandom, correctNumbers), training: 1 }
+      return { number: pickRandom(extend, excludedRandom, correctNumbers, pool), training: 1 }
     }
     training = 0
   }
 
   // 4. Ошибочных билетов нет — обычный случайный билет.
-  return { number: pickRandom(extend, excludedRandom, correctNumbers), training }
+  return { number: pickRandom(extend, excludedRandom, correctNumbers, pool), training }
+}
+
+// ---------------------------------------------------------------------------
+// Режимы прохождения теста
+// ---------------------------------------------------------------------------
+
+/** Вариант прохождения теста, выбираемый на стартовой странице. */
+export type QuizMode = 'normal' | 'extended' | 'hard' | 'errors'
+
+/** Ключ localStorage для сохранения выбранного варианта. */
+export const MODE_STORAGE_KEY = 'radio-ekzamen:quiz_mode'
+
+/** Вариант по умолчанию, если ранее выбор не сохранялся. */
+export const DEFAULT_MODE: QuizMode = 'normal'
+
+/** Доля приоритетных ошибочных билетов в режиме `hard` (~2/3). */
+const HARD_ERROR_SHARE = 2 / 3
+
+/** Варианты для выпадающего списка на стартовой странице. */
+export const QUIZ_MODES: ReadonlyArray<{ value: QuizMode; label: string }> = [
+  { value: 'normal', label: 'Обычный тест (случайный выбор билетов)' },
+  { value: 'extended', label: 'Расширенный тест (учет статистики ответов)' },
+  { value: 'hard', label: 'Только сложные билеты (помеченные как hard)' },
+  { value: 'errors', label: 'Повторение ошибок (выдача билетов, где были ошибки)' },
+]
+
+/** Короткие названия режимов для заголовка страницы теста. */
+export const QUIZ_MODE_LABELS: Record<QuizMode, string> = {
+  normal: 'обычный тест',
+  extended: 'расширенный тест',
+  hard: 'только сложные билеты',
+  errors: 'повторение ошибок',
+}
+
+export function isQuizMode(value: unknown): value is QuizMode {
+  return (
+    value === 'normal' ||
+    value === 'extended' ||
+    value === 'hard' ||
+    value === 'errors'
+  )
+}
+
+/** Прочитать сохранённый вариант прохождения теста. */
+export function loadQuizMode(): QuizMode {
+  try {
+    const value = localStorage.getItem(MODE_STORAGE_KEY)
+    return isQuizMode(value) ? value : DEFAULT_MODE
+  } catch {
+    return DEFAULT_MODE
+  }
+}
+
+/** Сохранить выбранный вариант прохождения теста. */
+export function saveQuizMode(mode: QuizMode): void {
+  try {
+    localStorage.setItem(MODE_STORAGE_KEY, mode)
+  } catch {
+    /* localStorage недоступен — работаем без сохранения */
+  }
+}
+
+/** Ведётся ли статистика ответов в выбранном режиме. */
+export function modeRecordsStats(mode: QuizMode): boolean {
+  return mode !== 'errors'
+}
+
+/** Равновероятный случайный номер из `pool`, по возможности не из `excluded`. */
+function pickUniform(pool: readonly number[], excluded: ReadonlySet<number>): number {
+  if (pool.length === 0) return TICKET_MIN // защита: пустой пул
+  let options = pool.filter((n) => !excluded.has(n))
+  if (options.length === 0) options = [...pool]
+  return options[randInt(0, options.length - 1)]
+}
+
+/**
+ * Выбрать следующий билет согласно выбранному режиму прохождения.
+ *
+ * - `normal` — равновероятный случайный билет из общего списка, статистика
+ *   правильных и ошибочных ответов на выбор НЕ влияет;
+ * - `extended` — расширенный алгоритм (`pickTicket`), опирающийся на статистику;
+ * - `hard` — только сложные билеты: билеты с ошибками выдаются преимущественно
+ *   (~2/3), независимо от того, помечены ли они `hard`; остальное — случайные
+ *   `hard`-билеты без ошибок (если ошибок нет — только случайные `hard`);
+ * - `errors` — случайный билет только из списка ошибочных.
+ */
+export function pickForMode(
+  mode: QuizMode,
+  extend: boolean,
+  stats: ErrorStats,
+  training: number,
+  recent: number[],
+): PickResult {
+  const recentSet = new Set(recent)
+  switch (mode) {
+    case 'normal':
+      return { number: pickUniform([...ALL_NUMBERS], recentSet), training: 0 }
+    case 'extended':
+      return pickTicket(extend, stats, training, recent)
+    case 'hard': {
+      // Ошибочные билеты показываются преимущественно (~2/3), независимо от
+      // того, помечены ли они hard; остальное — случайные сложные билеты.
+      const errNumbers = stats.errorNumbers()
+      const correctNumbers = new Set(stats.correctNumbers())
+      if (errNumbers.length === 0) {
+        return {
+          number: pickRandom(extend, recentSet, correctNumbers, HARD_NUMBERS),
+          training: 0,
+        }
+      }
+      if (Math.random() < HARD_ERROR_SHARE) {
+        // Приоритетная выдача ошибочного билета (по возможности не из recent).
+        let options = errNumbers.filter((n) => !recentSet.has(n))
+        if (options.length === 0) options = errNumbers
+        return { number: options[randInt(0, options.length - 1)], training: 0 }
+      }
+      // «Наполнение» — случайный сложный билет без ошибок.
+      const excluded = new Set<number>([...recentSet, ...errNumbers])
+      return {
+        number: pickRandom(extend, excluded, correctNumbers, HARD_NUMBERS),
+        training: 0,
+      }
+    }
+    case 'errors': {
+      const errNumbers = stats.errorNumbers()
+      if (errNumbers.length === 0) {
+        return { number: pickUniform([...ALL_NUMBERS], recentSet), training: 0 }
+      }
+      return { number: pickUniform(errNumbers, recentSet), training: 0 }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +470,9 @@ export function pickTicket(
 export class TrainingSession {
   readonly stats: ErrorStats
 
+  /** Текущий режим прохождения теста. */
+  mode: QuizMode = DEFAULT_MODE
+
   private training = 0
   private recent: number[] = []
 
@@ -332,12 +482,18 @@ export class TrainingSession {
 
   /** Записать результат ответа (обновляет и сохраняет статистику ошибок). */
   record(number: number, correct: boolean): void {
-    this.stats.record(number, correct)
+    if (modeRecordsStats(this.mode)) this.stats.record(number, correct)
   }
 
   /** Выбрать номер следующего билета и сдвинуть окно последних показанных. */
   next(extend: boolean): number {
-    const result = pickTicket(extend, this.stats, this.training, this.recent)
+    const result = pickForMode(
+      this.mode,
+      extend,
+      this.stats,
+      this.training,
+      this.recent,
+    )
     this.training = result.training
     this.recent.push(result.number)
     if (this.recent.length > RECENT_LIMIT) this.recent.shift()
