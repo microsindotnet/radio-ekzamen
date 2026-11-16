@@ -2,6 +2,7 @@ import { computed, reactive, ref } from 'vue'
 import { ANSWERS } from '../answers'
 import { TICKETS, getTicket } from '../tickets'
 import { TrainingSession } from '../training-algorithm'
+import type { QuizMode } from '../training-algorithm'
 import type { AnswerLetter, ShuffledChoice, Ticket } from '../core/types'
 
 export type LineColor = 'default' | 'green' | 'red' | 'yellow' | 'dim'
@@ -47,6 +48,8 @@ export function useExam() {
   const phase = ref<Phase>('answering')
   const total = ref(0)
   const correct = ref(0)
+
+  const mode = ref<QuizMode>(session.mode)
 
   const current = ref<{ ticket: Ticket; choices: ShuffledChoice[] } | null>(null)
 
@@ -167,7 +170,9 @@ export function useExam() {
     }
   }
 
-  function start(): void {
+  function start(selected: QuizMode = mode.value): void {
+    mode.value = selected
+    session.mode = selected
     transcript.splice(0, transcript.length)
     phase.value = 'answering'
     total.value = 0
@@ -186,6 +191,7 @@ export function useExam() {
     total,
     correct,
     wrong,
+    mode,
     errorStats,
     totalTickets: TICKETS.length,
     start,
