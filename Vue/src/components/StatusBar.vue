@@ -6,7 +6,6 @@ const props = defineProps<{
   total: number
   correct: number
   wrong: number
-  phase: 'answering' | 'finished'
 }>()
 
 const fileLines = computed(() =>
@@ -31,7 +30,6 @@ const totalErrors = computed(() =>
         <span>Пройдено: <b>{{ total }}</b></span>
         <span>Верно: <b class="c-green">{{ correct }}</b></span>
         <span>Ошибок: <b class="c-red">{{ wrong }}</b></span>
-        <span v-if="phase === 'finished'" class="finished">тест завершён (Esc)</span>
       </span>
     </div>
     <div class="status-body">
@@ -78,10 +76,6 @@ const totalErrors = computed(() =>
 
 .sep {
   color: var(--border);
-}
-
-.finished {
-  color: var(--yellow);
 }
 
 .status-body {

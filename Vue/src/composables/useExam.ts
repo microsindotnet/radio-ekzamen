@@ -16,6 +16,7 @@ export type TranscriptItem =
   | { kind: 'text'; segments: TextSegment[] }
   | { kind: 'divider' }
   | { kind: 'image'; src: string }
+  | { kind: 'choice'; ticket: number; n: number; text: string }
 
 export type Phase = 'answering' | 'finished'
 
@@ -88,7 +89,9 @@ export function useExam() {
     if (ticket.image) {
       push({ kind: 'image', src: imageUrl(ticket.image) })
     }
-    choices.forEach((choice, i) => pushText(`${i + 1}) ${choice.text}`))
+    choices.forEach((choice, i) =>
+      push({ kind: 'choice', ticket: ticket.number, n: i + 1, text: choice.text }),
+    )
     pushText('')
   }
 
@@ -184,6 +187,8 @@ export function useExam() {
   }
 
   const wrong = computed(() => total.value - correct.value)
+  // Номер билета, варианты которого сейчас доступны для выбора (для кнопок).
+  const activeTicket = computed(() => current.value?.ticket.number ?? null)
 
   return {
     transcript,
@@ -194,6 +199,7 @@ export function useExam() {
     mode,
     errorStats,
     totalTickets: TICKETS.length,
+    activeTicket,
     start,
     handleKey,
   }

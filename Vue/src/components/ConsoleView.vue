@@ -2,7 +2,13 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Phase, TranscriptItem } from '../composables/useExam'
 
-const props = defineProps<{ items: TranscriptItem[]; phase: Phase }>()
+const props = defineProps<{
+  items: TranscriptItem[]
+  phase: Phase
+  activeTicket: number | null
+}>()
+
+const emit = defineEmits<{ (e: 'answer', n: number): void }>()
 
 const scroller = ref<HTMLElement | null>(null)
 const content = ref<HTMLElement | null>(null)
@@ -26,6 +32,13 @@ function scrollToBottom(): void {
 
 function onScroll(): void {
   stick = isAtBottom()
+}
+
+// Клик по квадратной кнопке-цифре = нажатие клавиши 1..4.
+function choose(n: number, event: MouseEvent): void {
+  // снять фокус, чтобы Enter/Space на кнопке не «отвечали» повторно
+  ;(event.currentTarget as HTMLElement | null)?.blur()
+  emit('answer', n)
 }
 
 onMounted(() => {
@@ -63,6 +76,17 @@ watch(
         <div v-else-if="item.kind === 'image'" class="image-row">
           <img :src="item.src" class="ticket-image" alt="Иллюстрация к билету" />
         </div>
+        <div v-else-if="item.kind === 'choice'" class="choice">
+          <button
+            type="button"
+            class="choice-btn"
+            :disabled="phase !== 'answering' || item.ticket !== activeTicket"
+            @click="choose(item.n, $event)"
+          >
+            {{ item.n }}
+          </button>
+          <span class="choice-text">{{ item.text }}</span>
+        </div>
         <div v-else class="line">
           <span
             v-for="(seg, segIndex) in item.segments"
@@ -93,6 +117,48 @@ watch(
 }
 
 .line {
+  white-space: pre-wrap;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 3px 0;
+}
+
+.choice-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--fg);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.choice-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.choice-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.choice-text {
+  flex: 1 1 auto;
+  min-width: 0;
   white-space: pre-wrap;
 }
 
