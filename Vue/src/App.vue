@@ -21,10 +21,6 @@ function startTest(): void {
   started.value = true
 }
 
-function backToMenu(): void {
-  started.value = false
-}
-
 function onKeydown(event: KeyboardEvent): void {
   if (!started.value) return
   if (event.repeat) return
@@ -56,20 +52,24 @@ onUnmounted(() => {
     <header class="topbar">
       <h1>Экзамен на радиолюбительскую категорию ({{ modeLabel }})</h1>
       <div class="topbar-right">
-        <span class="hint">1..4 — ответить · Esc — завершить тест</span>
-        <button class="restart" type="button" @click="exam.start()">Заново</button>
-        <button class="restart" type="button" @click="backToMenu">Меню</button>
+        <button class="action" type="button" @click="exam.handleKey('Escape')">
+          Завершить
+        </button>
       </div>
     </header>
 
-    <ConsoleView :items="exam.transcript" :phase="exam.phase.value" />
+    <ConsoleView
+      :items="exam.transcript"
+      :phase="exam.phase.value"
+      :active-ticket="exam.activeTicket.value"
+      @answer="exam.handleKey(String($event))"
+    />
 
     <StatusBar
       :stats="exam.errorStats.value"
       :total="exam.total.value"
       :correct="exam.correct.value"
       :wrong="exam.wrong.value"
-      :phase="exam.phase.value"
     />
   </div>
 </template>
@@ -106,12 +106,7 @@ h1 {
   gap: 14px;
 }
 
-.hint {
-  color: var(--fg-dim);
-  font-size: 12px;
-}
-
-.restart {
+.action {
   font: inherit;
   font-size: 12px;
   color: var(--fg);
@@ -122,7 +117,7 @@ h1 {
   cursor: pointer;
 }
 
-.restart:hover {
+.action:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
