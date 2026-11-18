@@ -52,8 +52,16 @@ onUnmounted(() => {
     <header class="topbar">
       <h1>Экзамен на радиолюбительскую категорию ({{ modeLabel }})</h1>
       <div class="topbar-right">
-        <button class="action" type="button" @click="exam.handleKey('Escape')">
+        <button
+          v-if="exam.phase.value === 'answering'"
+          class="action"
+          type="button"
+          @click="exam.handleKey('Escape')"
+        >
           Завершить
+        </button>
+        <button v-else class="action" type="button" @click="startTest">
+          Заново
         </button>
       </div>
     </header>
