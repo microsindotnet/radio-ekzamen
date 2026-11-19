@@ -141,7 +141,7 @@ export const ANSWERS: Record<number, 'a' | 'b' | 'c' | 'd'> = {
   138: "c",
   139: "d",
   140: "d",
-  141: "c",
+  141: "d",
   142: "d",
   143: "c",
   144: "d",
