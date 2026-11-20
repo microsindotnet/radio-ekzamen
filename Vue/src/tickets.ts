@@ -722,7 +722,7 @@ export const TICKETS: Ticket[] = [
       "Префикс и суффикс"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 61,
@@ -782,7 +782,7 @@ export const TICKETS: Ticket[] = [
       "UA3AA/z"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 66,
@@ -1130,7 +1130,7 @@ export const TICKETS: Ticket[] = [
       "Позывной сигнал ретранслятора"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 95,
@@ -1262,7 +1262,7 @@ export const TICKETS: Ticket[] = [
       "Нет"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 106,
@@ -1274,7 +1274,7 @@ export const TICKETS: Ticket[] = [
       "Либо закончить радиообмен, либо перейти на другую частоту для продолжения радиообмена"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 107,
@@ -1430,7 +1430,7 @@ export const TICKETS: Ticket[] = [
       "Чтобы проверить, не отключился ли оператор станции, находящейся на приеме"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 120,
@@ -1850,7 +1850,7 @@ export const TICKETS: Ticket[] = [
       "Низкочастотный звуковой сигнал, передающийся в эфир вместе с речью оператора"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 155,
@@ -1898,7 +1898,7 @@ export const TICKETS: Ticket[] = [
       "Изменяет частоту приёма при неизменной частоте передачи"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 159,
@@ -2306,7 +2306,7 @@ export const TICKETS: Ticket[] = [
       "Бесконечно большим"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 193,
@@ -2318,7 +2318,7 @@ export const TICKETS: Ticket[] = [
       "1"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 194,
@@ -2378,7 +2378,7 @@ export const TICKETS: Ticket[] = [
       "17 лет"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 199,
@@ -2666,7 +2666,7 @@ export const TICKETS: Ticket[] = [
       "Любое"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 223,
@@ -2702,7 +2702,7 @@ export const TICKETS: Ticket[] = [
       "50 Ватт"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 226,
@@ -3338,7 +3338,7 @@ export const TICKETS: Ticket[] = [
       "Уменьшить площадь пластин, уменьшить расстояние между ними, применить диэлектрик с более низкой диэлектрической проницаемостью"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 279,
@@ -3350,7 +3350,7 @@ export const TICKETS: Ticket[] = [
       "Уменьшить площадь пластин, уменьшить расстояние между ними, применить диэлектрик с более высокой диэлектрической проницаемостью"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 280,
@@ -3494,7 +3494,7 @@ export const TICKETS: Ticket[] = [
       "Высоковольтный стабилизатор"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 292,
@@ -3590,7 +3590,7 @@ export const TICKETS: Ticket[] = [
       "Первый анод, второй анод, катод, фокусирующий электрод, экранная сетка, подогреватель"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 300,
@@ -4298,7 +4298,7 @@ export const TICKETS: Ticket[] = [
       "Входное сопротивление около 36 Ом, диаграмма в виде восьмёрки в плоскости рамки"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 359,
@@ -4322,7 +4322,7 @@ export const TICKETS: Ticket[] = [
       "Назначение противовесов – грозозащита"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 361,
@@ -4478,7 +4478,7 @@ export const TICKETS: Ticket[] = [
       "Круговой"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 374,
@@ -4718,7 +4718,8 @@ export const TICKETS: Ticket[] = [
       "Подводимая от передатчика к фидеру антенны мощность, усреднённая за время одного радиочастотного периода, соответствующего максимальной амплитуде модуляционной огибающей при нормальных условиях работы"
     ],
     "image": null,
-    "hard": true
+    "hard": true,
+    "explanation": "Такое сложное определение нужно, чтобы однозначно измерять мощность в понятной точке (выход передатчика). Также необходимо:\n1. Устранить зависимость от модуляции — ведь при речи/музыке мощность постоянно меняется.\n2. Обеспечить воспроизводимость — чтобы разные инженеры в разных странах, измеряя «среднюю мощность», получали сопоставимые цифры.\n3. Сравнивать станции корректно — по характеристике самого передатчика, а не по случайным факторам (потери в фидере, КПД антенны, момент измерения)."
   },
   {
     "number": 394,
@@ -4898,7 +4899,7 @@ export const TICKETS: Ticket[] = [
       "Для измерения текущего значения выходной мощности"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 409,
@@ -5030,7 +5031,7 @@ export const TICKETS: Ticket[] = [
       "Только углекислотные огнетушители"
     ],
     "image": null,
-    "hard": true
+    "hard": false
   },
   {
     "number": 420,

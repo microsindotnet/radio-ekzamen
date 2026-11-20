@@ -126,6 +126,9 @@ def show_ticket(ticket: tickets.Ticket, extend: bool = False) -> tuple[bool, boo
             # затем правильный ответ.
             print("\033[31mОшибка\033[0m" + f": {key}")
             print(f"Правильный ответ: {correct_text}")
+            if ticket.explanation:
+                print()
+                print(f"Пояснение: {ticket.explanation}")
         return (False, correct)
     finally:
         picview.close(image_proc)

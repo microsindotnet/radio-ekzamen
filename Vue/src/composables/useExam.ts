@@ -120,6 +120,10 @@ export function useExam() {
         { text: `: ${key}`, color: 'default' },
       ])
       pushText(`Правильный ответ: ${correctText}`)
+      if (state.ticket.explanation) {
+        pushText('')
+        pushText(`Пояснение: ${state.ticket.explanation}`)
+      }
     }
 
     session.record(state.ticket.number, isCorrect)
