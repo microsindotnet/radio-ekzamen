@@ -6,6 +6,7 @@ export interface Ticket {
   answers: [string, string, string, string]
   image: string | null
   hard: boolean
+  explanation?: string | null
 }
 
 export interface ShuffledChoice {
