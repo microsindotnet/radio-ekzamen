@@ -85,8 +85,6 @@ def show_ticket(ticket: tickets.Ticket, extend: bool = False) -> tuple[bool, boo
         print(f"\033[33mБилет № {ticket.number}\033[0m")
     else:
         print(f"Билет № {ticket.number}")
-    print()
-    print("Вопрос:")
     print(ticket.question)
     print()
 
