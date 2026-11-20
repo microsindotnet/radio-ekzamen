@@ -82,8 +82,6 @@ export function useExam() {
     } else {
       pushText(`Билет № ${ticket.number}`)
     }
-    pushText('')
-    pushText('Вопрос:')
     pushText(ticket.question)
     pushText('')
     if (ticket.image) {
