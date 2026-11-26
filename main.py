@@ -4,8 +4,7 @@
 Использование:
     python main.py -n=22      # показать билет № 22
     python main.py -r         # показать случайный билет
-    python main.py -t         # тест: случайные билеты до нажатия Esc
-    python main.py -t -e      # тест, сложные билеты в 2 раза чаще
+    python main.py -t         # тест: выбрать режим и пройти случайные билеты до Esc
     python main.py -h         # подсказка
 """
 
@@ -49,6 +48,21 @@ TICKET_MAX = 426
 # один и тот же билет не выпадал слишком часто.
 RECENT_LIMIT = 10
 
+# Множества номеров всех билетов и только сложных (``hard``) билетов.
+ALL_NUMBERS = frozenset(t.number for t in tickets.TICKETS)
+HARD_NUMBERS = frozenset(t.number for t in tickets.TICKETS if t.hard)
+
+# Режимы теста (как на стартовом экране Vue-версии): код и подпись.
+QUIZ_MODES = (
+    ("normal", "Обычный тест (случайный выбор билетов)"),
+    ("extended", "Расширенный тест (учет статистики ответов)"),
+    ("hard", "Только сложные билеты (помеченные как hard)"),
+    ("errors", "Повторение ошибок (выдача билетов, где были ошибки)"),
+)
+
+# Доля приоритетных ошибочных билетов в режиме "hard" (~2/3).
+HARD_ERROR_SHARE = 2 / 3
+
 
 def wait_for_key(prompt: str = "Выберите ответ (1..4) или Esc: ") -> str:
     """Ждать нажатия клавиши и вернуть её."""
@@ -74,14 +88,14 @@ def wait_for_key(prompt: str = "Выберите ответ (1..4) или Esc: "
     return key
 
 
-def show_ticket(ticket: tickets.Ticket, extend: bool = False) -> tuple[bool, bool]:
+def show_ticket(ticket: tickets.Ticket) -> tuple[bool, bool]:
     """Показать билет, перемешать ответы и проверить выбор.
 
     Возвращает ``(esc, correct)``: ``esc=True``, если нажат Esc.
-    При ``extend=True`` заголовок билета выводится жёлтым цветом.
+    Сложные билеты (``hard``) выводятся жёлтым цветом.
     """
     print("-" * 28)
-    if extend and ticket.hard:
+    if ticket.hard:
         print(f"\033[33mБилет № {ticket.number}\033[0m")
     else:
         print(f"Билет № {ticket.number}")
@@ -148,46 +162,63 @@ def print_stats(total: int, correct: int, wrong: int) -> None:
     print(border)
 
 
-def pick_random(
-    extend: bool = False,
-    excluded: Iterable[int] | None = None,
-    halved: Iterable[int] | None = None,
-) -> int:
-    """Случайный номер билета, которого нет в ``excluded``.
+def weighted_choice(items: list[int], weights: list[float]) -> int:
+    """Взвешенный выбор одного элемента (аналог ``random.choices(k=1)``)."""
+    total = sum(weights)
+    r = random.random() * total
+    for item, weight in zip(items, weights):
+        r -= weight
+        if r < 0:
+            return item
+    return items[-1]
 
-    При ``extend=True`` сложные билеты (``hard``) выпадают в 2 раза чаще.
-    ``excluded`` — номера, которые нельзя выдавать (последние показанные
-    билеты и ошибочные билеты). ``halved`` — билеты, на которые был дан
-    правильный ответ (раздел ``Correct``): они выпадают в 2 раза реже.
+
+def pick_random(
+    excluded: Iterable[int],
+    halved: Iterable[int],
+    pool: Iterable[int] | None = None,
+) -> int:
+    """Случайный билет, не входящий в ``excluded``.
+
+    Сложные билеты (``hard``) выпадают в 2 раза чаще, а билеты из ``halved``
+    (на которые был дан правильный ответ) — в 2 раза реже. ``pool`` —
+    множество номеров, из которых выбираем (по умолчанию все билеты).
     """
-    skip = set(excluded or ())
-    half = set(halved or ())
-    if extend:
-        offers = [t for t in tickets.TICKETS if t.number not in skip]
-        if not offers:  # защита: если исключать стало нечего
-            offers = list(tickets.TICKETS)
-        population = [t.number for t in offers]
-        weights = [
-            (2 if t.hard else 1) * (0.5 if t.number in half else 1)
-            for t in offers
-        ]
-        return random.choices(population, weights=weights, k=1)[0]
-    while True:
-        number = random.randint(TICKET_MIN, TICKET_MAX)
-        if number in skip:
-            continue
-        if number in half and random.random() < 0.5:
-            continue
-        return number
+    numbers = set(ALL_NUMBERS if pool is None else pool)
+    skip = set(excluded)
+    half = set(halved)
+    all_tickets = [t for t in tickets.TICKETS if t.number in numbers]
+    offers = [t for t in all_tickets if t.number not in skip]
+    if not offers:  # защита: если исключать стало нечего
+        offers = all_tickets
+    if not offers:  # защита: пустой пул
+        return TICKET_MIN
+    population = [t.number for t in offers]
+    weights = [
+        (2 if t.hard else 1) * (0.5 if t.number in half else 1)
+        for t in offers
+    ]
+    return weighted_choice(population, weights)
+
+
+def pick_uniform(pool: Iterable[int], excluded: Iterable[int]) -> int:
+    """Равновероятный номер из ``pool``, по возможности не из ``excluded``."""
+    options = list(pool)
+    if not options:  # защита: пустой пул
+        return TICKET_MIN
+    skip = set(excluded)
+    available = [n for n in options if n not in skip]
+    if not available:
+        available = options
+    return available[random.randint(0, len(available) - 1)]
 
 
 def pick_ticket(
-    extend: bool,
     stats: stat.ErrorStats,
     training: int,
-    recent: list[int],
+    recent: Iterable[int],
 ) -> tuple[int, int]:
-    """Выбрать следующий билет с учётом тренировочного счётчика.
+    """Выбрать следующий билет с учётом счётчика (режим ``extended``).
 
     ``training`` — счётчик «тренировки». ``recent`` — последние показанные
     билеты (не длиннее ``RECENT_LIMIT``); их нельзя вытянуть случайно, чтобы
@@ -226,7 +257,7 @@ def pick_ticket(
 
     # 2. Обычный случайный билет (не recent, не ошибочный), счётчик -1.
     if training > 1:
-        return pick_random(extend, excluded_random, correct_numbers), training - 1
+        return pick_random(excluded_random, correct_numbers), training - 1
 
     # 3. Пора показать билет из списка ошибочных.
     if training == 1:
@@ -236,11 +267,72 @@ def pick_ticket(
                 return candidate, 0
             # Ошибочный билет недавно показывали: показываем обычный,
             # счётчик НЕ уменьшается — повторим попытку позже.
-            return pick_random(extend, excluded_random, correct_numbers), 1
+            return pick_random(excluded_random, correct_numbers), 1
         training = 0
 
     # 4. Ошибочных билетов нет — обычный случайный билет.
-    return pick_random(extend, excluded_random, correct_numbers), training
+    return pick_random(excluded_random, correct_numbers), training
+
+
+def pick_for_mode(
+    mode: str,
+    stats: stat.ErrorStats,
+    training: int,
+    recent: Iterable[int],
+) -> tuple[int, int]:
+    """Выбрать следующий билет согласно выбранному режиму теста.
+
+    Режимы совпадают с вариантами стартового экрана Vue-версии:
+
+    - ``normal`` — равновероятный случайный билет, статистика не влияет;
+    - ``extended`` — расширенный алгоритм (``pick_ticket``) со статистикой;
+    - ``hard`` — только сложные билеты, ошибочные выдаются преимущественно
+      (~2/3), остальное — случайные сложные;
+    - ``errors`` — только билеты из списка ошибочных.
+    """
+    recent_set = set(recent)
+    if mode == "normal":
+        return pick_uniform(sorted(ALL_NUMBERS), recent_set), 0
+    if mode == "extended":
+        return pick_ticket(stats, training, recent)
+    if mode == "hard":
+        # Ошибочные билеты показываются преимущественно (~2/3), независимо от
+        # того, помечены ли они hard; остальное — случайные сложные билеты.
+        err_numbers = sorted(stats.counts)
+        correct_numbers = set(stats.correct)
+        if not err_numbers:
+            return pick_random(recent_set, correct_numbers, HARD_NUMBERS), 0
+        if random.random() < HARD_ERROR_SHARE:
+            options = [n for n in err_numbers if n not in recent_set]
+            if not options:
+                options = err_numbers
+            return options[random.randint(0, len(options) - 1)], 0
+        excluded = recent_set | set(err_numbers)
+        return pick_random(excluded, correct_numbers, HARD_NUMBERS), 0
+    if mode == "errors":
+        err_numbers = sorted(stats.counts)
+        if not err_numbers:
+            return pick_uniform(sorted(ALL_NUMBERS), recent_set), 0
+        return pick_uniform(err_numbers, recent_set), 0
+    raise ValueError(f"неизвестный режим: {mode}")
+
+
+def choose_mode() -> str | None:
+    """Спросить режим теста. Возвращает код режима или ``None`` при Esc."""
+    print("Выберите режим теста:")
+    for i, (_, label) in enumerate(QUIZ_MODES, 1):
+        print(f"{i}) {label}")
+    print()
+    while True:
+        key = wait_for_key("Режим (1..4) или Esc: ")
+        if key == "\x1b":
+            if sys.stdin.isatty():
+                print()
+            return None
+        if key in ("1", "2", "3", "4"):
+            if sys.stdin.isatty():
+                print()
+            return QUIZ_MODES[int(key) - 1][0]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -267,12 +359,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="тест: случайные билеты до нажатия Esc",
     )
-    parser.add_argument(
-        "-e",
-        "--extend",
-        action="store_true",
-        help="сложные билеты предлагать в 2 раза чаще",
-    )
     return parser
 
 
@@ -285,42 +371,49 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     stats = stat.ErrorStats(BASE / "err_stat.txt")
-    training = 0
 
     if args.num is not None:
         if not TICKET_MIN <= args.num <= TICKET_MAX:
             parser.error(
                 f"номер билета должен быть от {TICKET_MIN} до {TICKET_MAX}"
             )
-        esc, ok = show_ticket(tickets.get_ticket(args.num), args.extend)
+        esc, ok = show_ticket(tickets.get_ticket(args.num))
         if not esc:
             stats.record(args.num, ok)
         return 0
 
     if args.random:
-        number, training = pick_ticket(args.extend, stats, training, [])
-        esc, ok = show_ticket(tickets.get_ticket(number), args.extend)
+        number, _ = pick_ticket(stats, 0, [])
+        esc, ok = show_ticket(tickets.get_ticket(number))
         if not esc:
             stats.record(number, ok)
         return 0
 
+    # Режим -t: сначала выбираем режим теста (как стартовый экран Vue-версии).
+    mode = choose_mode()
+    if mode is None:
+        return 0
+
+    training = 0
     # ``recent`` — последние показанные билеты: их не выдаём повторно,
     # пока список не «продвинется» (см. RECENT_LIMIT).
     recent: list[int] = []
     total = 0
     correct = 0
     while True:
-        number, training = pick_ticket(args.extend, stats, training, recent)
+        number, training = pick_for_mode(mode, stats, training, recent)
         recent.append(number)
         if len(recent) > RECENT_LIMIT:
             recent.pop(0)
-        esc, ok = show_ticket(tickets.get_ticket(number), args.extend)
+        esc, ok = show_ticket(tickets.get_ticket(number))
         if esc:
             break
         total += 1
         if ok:
             correct += 1
-        stats.record(number, ok)
+        # В режиме повторения ошибок статистика не ведётся (как в Vue).
+        if mode != "errors":
+            stats.record(number, ok)
     print_stats(total, correct, total - correct)
     return 0
 
